@@ -41,11 +41,12 @@ class SchemaParser internal constructor(
 
     private val extensionDefinitions = definitions.filterIsInstance<ObjectTypeExtensionDefinition>()
     private val inputExtensionDefinitions = definitions.filterIsInstance<InputObjectTypeExtensionDefinition>()
+    private val interfaceExtensionDefinitions = definitions.filterIsInstance<InterfaceTypeExtensionDefinition>()
 
     private val objectDefinitions = (definitions.filterIsInstance<ObjectTypeDefinition>() - extensionDefinitions)
     private val inputObjectDefinitions = (definitions.filterIsInstance<InputObjectTypeDefinition>() - inputExtensionDefinitions)
     private val enumDefinitions = definitions.filterIsInstance<EnumTypeDefinition>()
-    private val interfaceDefinitions = definitions.filterIsInstance<InterfaceTypeDefinition>()
+    private val interfaceDefinitions = (definitions.filterIsInstance<InterfaceTypeDefinition>() - interfaceExtensionDefinitions)
 
     private val unionDefinitions = definitions.filterIsInstance<UnionTypeDefinition>()
 
@@ -79,7 +80,10 @@ class SchemaParser internal constructor(
                 inputObjects.add(createInputObject(it, inputObjects))
             }
         }
-        val interfaces = interfaceDefinitions.map { createInterfaceObject(it, inputObjects) }
+        val interfaces: MutableList<GraphQLInterfaceType> = mutableListOf()
+        interfaceDefinitions.forEach {
+            interfaces.add(createInterfaceObject(it, interfaces, inputObjects))
+        }
         val objects = objectDefinitions.map { createObject(it, interfaces, inputObjects) }
         val unions = unionDefinitions.map { createUnionObject(it, objects) }
         val enums = enumDefinitions.map { createEnumObject(it) }
@@ -218,17 +222,27 @@ class SchemaParser internal constructor(
         return schemaGeneratorDirectiveHelper.onEnum(builder.build(), schemaDirectiveParameters)
     }
 
-    private fun createInterfaceObject(interfaceDefinition: InterfaceTypeDefinition, inputObjects: List<GraphQLInputObjectType>): GraphQLInterfaceType {
+    private fun createInterfaceObject(interfaceDefinition: InterfaceTypeDefinition, interfaces: List<GraphQLInterfaceType>, inputObjects: List<GraphQLInputObjectType>): GraphQLInterfaceType {
         val name = interfaceDefinition.name
+        val extensionDefinitions = interfaceExtensionDefinitions.filter { it.name == name }
         val builder = GraphQLInterfaceType.newInterface()
             .name(name)
             .definition(interfaceDefinition)
+            .extensionDefinitions(extensionDefinitions)
             .description(if (interfaceDefinition.description != null) interfaceDefinition.description.content else getDocumentation(interfaceDefinition))
 
         builder.withDirectives(*buildDirectives(interfaceDefinition.directives, Introspection.DirectiveLocation.INTERFACE))
 
-        interfaceDefinition.fieldDefinitions.forEach { fieldDefinition ->
-            builder.field { field -> createField(field, fieldDefinition, inputObjects) }
+        interfaceDefinition.implements.forEach { implementsDefinition ->
+            val interfaceName = (implementsDefinition as TypeName).name
+            builder.withInterface(interfaces.find { it.name == interfaceName }
+                    ?: throw SchemaError("Expected interface type with name '$interfaceName' but found none!"))
+        }
+
+        (extensionDefinitions + interfaceDefinition).forEach {
+            it.fieldDefinitions.forEach { fieldDefinition ->
+                builder.field { field -> createField(field, fieldDefinition, inputObjects) }
+            }
         }
 
         return schemaGeneratorDirectiveHelper.onInterface(builder.build(), schemaDirectiveParameters)

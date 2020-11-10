@@ -33,11 +33,13 @@ internal class SchemaClassScanner(
     private val initialDictionary = initialDictionary.mapValues { InitialDictionaryEntry(it.value) }
     private val extensionDefinitions = allDefinitions.filterIsInstance<ObjectTypeExtensionDefinition>()
     private val inputExtensionDefinitions = allDefinitions.filterIsInstance<InputObjectTypeExtensionDefinition>()
+    private val interfaceExtensionDefinitions = allDefinitions.filterIsInstance<InterfaceTypeExtensionDefinition>()
 
-    private val definitionsByName = (allDefinitions.filterIsInstance<TypeDefinition<*>>() - extensionDefinitions - inputExtensionDefinitions).associateBy { it.name }
+    private val definitionsByName = (allDefinitions.filterIsInstance<TypeDefinition<*>>() - extensionDefinitions - inputExtensionDefinitions - interfaceExtensionDefinitions).associateBy { it.name }
     private val objectDefinitions = (allDefinitions.filterIsInstance<ObjectTypeDefinition>() - extensionDefinitions)
     private val objectDefinitionsByName = objectDefinitions.associateBy { it.name }
-    private val interfaceDefinitionsByName = allDefinitions.filterIsInstance<InterfaceTypeDefinition>().associateBy { it.name }
+    private val interfaceDefinitions = (allDefinitions.filterIsInstance<InterfaceTypeDefinition>() - interfaceExtensionDefinitions)
+    private val interfaceDefinitionsByName = interfaceDefinitions.associateBy { it.name }
 
     private val fieldResolverScanner = FieldResolverScanner(options)
     private val typeClassMatcher = TypeClassMatcher(definitionsByName)
@@ -176,7 +178,7 @@ internal class SchemaClassScanner(
         validateRootResolversWereUsed(rootTypeHolder.mutation, fieldResolvers)
         validateRootResolversWereUsed(rootTypeHolder.subscription, fieldResolvers)
 
-        return ScannedSchemaObjects(dictionary, observedDefinitions + extensionDefinitions + inputExtensionDefinitions, scalars, rootInfo, fieldResolversByType.toMap(), unusedDefinitions)
+        return ScannedSchemaObjects(dictionary, observedDefinitions + extensionDefinitions + inputExtensionDefinitions + interfaceExtensionDefinitions, scalars, rootInfo, fieldResolversByType.toMap(), unusedDefinitions)
     }
 
     private fun validateRootResolversWereUsed(rootType: RootType?, fieldResolvers: List<FieldResolver>) {
